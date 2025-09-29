@@ -349,6 +349,63 @@ exports.getFilteredProducts = async (req, res) => {
   }
 };
 
+exports.searchProducts = async (req, res) => {
+    try {
+        const { search, page = 1, limit = 10 } = req.query;
+
+        if (!search || search.trim() === "") {
+            return res.status(400).json({ message: "Search term is required" });
+        }
+
+        const searchTerm = search.trim();
+        const parsedPage = parseInt(page);
+        const parsedLimit = parseInt(limit);
+
+        if (isNaN(parsedPage) || isNaN(parsedLimit) || parsedPage < 1 || parsedLimit < 1) {
+            return res.status(400).json({ message: "Page and limit must be positive numbers" });
+        }
+
+        const offset = (parsedPage - 1) * parsedLimit;
+        
+        // Added tracing log: Check if the function starts and parameters are correct
+        // console.log(`[Search Trace] Starting search for term: ${searchTerm}, Limit: ${parsedLimit}, Offset: ${offset}`); 
+        
+        // 1. Fetch matching products for the current page
+        const products = await Product.searchProducts({ 
+            searchTerm, 
+            limit: parsedLimit, 
+            offset 
+        });
+        
+        // Added tracing log: Check if the first database call succeeded
+        // console.log(`[Search Trace] Step 1 (Search) successful. Fetched ${products.length} products.`); 
+
+        // 2. Get the total count of unique matching products
+        const total = await Product.countSearchProducts(searchTerm);
+        
+        // Added tracing log: Check if the second database call succeeded
+        // console.log(`[Search Trace] Step 2 (Count) successful. Total unique products: ${total}`);
+        
+        const totalPages = Math.ceil(total / parsedLimit);
+
+        res.json({ 
+            page: parsedPage, 
+            limit: parsedLimit, 
+            total: total, 
+            totalPages: totalPages, 
+            count: products.length, 
+            products 
+        });
+
+    } catch (err) {
+        // Enhanced error logging to include the stack trace
+        console.error("Search Product API Error (500):", err.message); 
+        console.error(err.stack); // This helps trace the error back to the model/DB query
+        res.status(500).json({ message: "Error during product search", error: err.message });
+    }
+};
+
+
 // ✅ Get single product with variants & media
 exports.getProductById = async (req, res) => {
   try {

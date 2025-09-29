@@ -434,4 +434,99 @@ exports.updateVariant = async (id, fields) => {
   }
 };
 
+exports.searchProducts = async ({ searchTerm, limit, offset }) => {
+    try {
+        const term = `%${searchTerm.toLowerCase()}%`;
+
+        // We join categories, product_variants, and product_media (for the main image).
+        // The search logic uses LOWER() for case-insensitive matching across all relevant text fields.
+        let query = `
+            SELECT 
+                p.id, p.name, p.brand, p.short_description, p.is_free_shipping AS product_free_shipping,
+                v.id AS variant_id, v.sku, v.variant_name, v.mrp, v.price, v.stock, v.is_default, 
+                ROUND(((v.mrp - v.price)/v.mrp)*100, 2) AS discount_percentage,
+                m.media_url, m.media_type,
+                c.name AS category_name
+            FROM products p
+            JOIN product_variants v ON p.id = v.product_id
+            LEFT JOIN product_media m ON p.id = m.product_id AND m.sort_order = 1
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE p.is_active = 1
+            AND (
+                LOWER(p.name) LIKE ? 
+                OR LOWER(p.description) LIKE ? 
+                OR LOWER(p.brand) LIKE ?
+                OR LOWER(v.sku) LIKE ?
+                OR LOWER(c.name) LIKE ? 
+                OR (v.price = ? OR v.mrp = ?) -- Direct price match (if the term is a number)
+            )
+            ORDER BY 
+                CASE 
+                    WHEN LOWER(p.name) LIKE ? THEN 1 -- prioritize name matches
+                    WHEN LOWER(p.brand) LIKE ? THEN 2 
+                    WHEN LOWER(c.name) LIKE ? THEN 3
+                    ELSE 4
+                END,
+                p.created_at DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        const isNumeric = !isNaN(parseFloat(searchTerm)) && isFinite(searchTerm);
+        const priceMatch = isNumeric ? parseFloat(searchTerm) : null;
+
+        const values = [
+            term, term, term, term, term, // For text matches
+            priceMatch, priceMatch,      // For price/mrp match (only if numeric)
+            term, term, term,            // For ORDER BY prioritization
+            parseInt(limit), parseInt(offset)
+        ];
+
+        const [rows] = await pool.query(query, values);
+        return rows;
+    } catch (err) {
+        throw new Error("Error executing product search: " + err.message);
+    }
+};
+
+
+exports.countSearchProducts = async (searchTerm) => {
+    try {
+        const term = `%${searchTerm.toLowerCase()}%`;
+        
+        // Use COUNT(DISTINCT p.id) to ensure we count each product only once,
+        // even if it matches via multiple variants or category joins.
+        const query = `
+            SELECT 
+                COUNT(DISTINCT p.id) AS total
+            FROM products p
+            JOIN product_variants v ON p.id = v.product_id
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE p.is_active = 1
+            AND (
+                LOWER(p.name) LIKE ? 
+                OR LOWER(p.description) LIKE ? 
+                OR LOWER(p.brand) LIKE ?
+                OR LOWER(v.sku) LIKE ?
+                OR LOWER(c.name) LIKE ? 
+                OR (v.price = ? OR v.mrp = ?)
+            )
+        `;
+
+        const isNumeric = !isNaN(parseFloat(searchTerm)) && isFinite(searchTerm);
+        const priceMatch = isNumeric ? parseFloat(searchTerm) : null;
+        
+        const values = [
+            term, term, term, term, term,
+            priceMatch, priceMatch
+        ];
+
+        const [[result]] = await pool.query(query, values);
+        return result.total;
+
+    } catch (err) {
+        throw new Error("Error counting search products: " + err.message);
+    }
+};
+
+
 

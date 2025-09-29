@@ -8,13 +8,14 @@ const { uploadProductMedia } = require("../middlewares/uploadProductMedia");
 // ✅ Get all active products with filters & pagination
 router.get("/filter", productController.getFilteredProducts);
 
+// ⭐ FIX: Move specific routes like /search and /all ABOVE /:id 
+router.get('/search', productController.searchProducts);
+
 router.get("/all", productController.getAllProductsFull);
 
 // ✅ Get single product by ID
-// ⚠️ Keep this **after** more specific routes (like `/media/:id`) 
-// to avoid conflicts
+// ⚠️ Keep this **LAST** among GET requests to avoid conflicts
 router.get("/:id", productController.getProductById);
-
 
 
 // ================== ADMIN ROUTES ==================
@@ -28,6 +29,7 @@ router.put("/:id", uploadProductMedia, productController.updateProduct);
 
 // ✅ Delete product
 router.delete("/:id", productController.deleteProduct);
+
 
 // ✅ Delete specific media file
 // 👆 Should come BEFORE `/:id` to avoid being caught as productId
